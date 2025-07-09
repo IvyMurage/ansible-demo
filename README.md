@@ -70,7 +70,7 @@ The playbook follows these steps:
 
 ## The following section explains every task within the playbook
 
-```
+```yaml
 - name: Launch EC2 instance
   hosts: localhost
   connection: local
@@ -78,7 +78,7 @@ The playbook follows these steps:
 ```
 * Defines a play named "Launch EC2 instance" that runs on the local machine, does not collect system facts, and uses a local connection.
 
-```
+```yaml
   vars:
     key_name: web-app-key
     region: eu-west-1
@@ -89,7 +89,7 @@ The playbook follows these steps:
 ```
 * Sets variables for the AWS key pair, region, instance type, AMI ID, security group, and instance name.
 
-```
+```yaml
   tasks: 
     - name: Create security group
       amazon.aws.ec2_group:
@@ -108,14 +108,14 @@ The playbook follows these steps:
 ```
 * Creates a security group in AWS with SSH (port 22) open to the world and all outbound traffic allowed. The result is registered as sg.
 
-```
+```yaml
     - name: Output security group details
       ansible.builtin.debug:
         msg: "Security group created with ID: {{ sg.group_id }}"
 ```
 * Prints the security group ID to the console for reference.
 
-```     
+```yaml   
         amazon.aws.ec2_instance:
         name: "{{ instance_name }}"
         key_name: "{{ key_name }}"
@@ -134,7 +134,7 @@ The playbook follows these steps:
 ```
 * Launches an EC2 instance with the specified parameters, waits for it to be ready, and tags it. The result is registered as ec2.
 
-```
+```yaml
  - name: Check for existing ec2 instances
       amazon.aws.ec2_instance_info:
         region: "{{ region }}"
@@ -145,7 +145,7 @@ The playbook follows these steps:
 ```
 
 * Uses ```amazon.aws.ec2_instance_info``` to check if an EC2 instance with the specified name tag already exists and is in a running or pending state.
-```
+```yaml
    - name: Save public ip to inventory
       copy:
         content: |
@@ -156,7 +156,7 @@ The playbook follows these steps:
 ```
 * Writes the public IP of the new instance to an ```inventory.ini``` file for later use, only if an instance was created.
 
-```
+```yaml
     - name: Add new instance to host group
       ansible.builtin.add_host:
         hostname: "{{ item.public_ip }}"
@@ -165,7 +165,7 @@ The playbook follows these steps:
 ```
 * Dynamically adds the new instance(s) to an in-memory Ansible group called ```launched_ec2```.
 
-```
+```yaml
     - name: Output instance details
       ansible.builtin.debug:
         msg: "Launched EC2 instance with ID: {{ item.instance_id }}, Private IP: {{ item.private_ip_address }}"
