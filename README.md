@@ -68,22 +68,7 @@ The playbook follows these steps:
   when: existing_instances.instances | length == 0
 ```
 
-## What This Playbook Does
-
-- Creates a security group with SSH access (port 22) open to the world.
-- Looks up subnet information for the instance.
-- **Checks for existing EC2 instances with the specified tag and only launches a new instance if none exist.**
-- Saves the instance’s public IP to `inventory.ini` for future use.
-- Adds the instance to an in-memory Ansible group for further automation.
-- Outputs the instance ID and public IP.
-
-## Notes
-
-- Update the subnet ID in the playbook to match your AWS environment.
-- The playbook assumes the default user is `ubuntu` (for Ubuntu AMIs). Change as needed.
-- Ensure your key pair file path is correct and accessible.
-- This playbook is idempotent: running it multiple times will not create duplicate EC2 instances with
-
+## The following section explains every task within the playbook
 
 ```
 - name: Launch EC2 instance
