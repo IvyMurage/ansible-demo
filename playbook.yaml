@@ -1,0 +1,83 @@
+# This playbook launches an EC2 instance using Ansible.
+# It runs on the local machine (localhost) without gathering system facts.
+# The playbook is intended for use with AWS EC2 provisioning tasks.
+# ansible-galaxy collection install amazon.aws
+- name: Launch EC2 instance
+  hosts: localhost
+  connection: local
+  gather_facts: no
+
+  vars:
+    key_name: web-app-key
+    region: eu-west-1
+    instance_type: t2.micro
+    image_id: ami-0fab1b527ffa9b942
+    security_group: my-sg-group
+    instance_name: ansible-ec2-demo
+
+  tasks: 
+    - name: Create security group
+      amazon.aws.ec2_group:
+        name: "{{ security_group }}"
+        description: Security group for Ansible ec2 ansible-ec2-demo
+        region: "{{ region }}"
+        rules:
+          - proto: tcp
+            ports: [22]
+            cidr_ip: 0.0.0.0/0
+        rules_egress:
+          - proto: -1
+            cidr_ip: 0.0.0.0/0
+        state: present
+      register: sg
+
+    - name: Output security group details
+      ansible.builtin.debug:
+        msg: "Security group created with ID: {{ sg.group_id }}"
+
+    - name: Get subnet information
+      amazon.aws.ec2_vpc_subnet_info:
+        region: "{{ region }}"
+        filters:
+          subnet-id: subnet-062baa97588e6ef8e
+      register: subnet_info
+      
+
+    - name: Launch EC2 instance
+      amazon.aws.ec2_instance:
+        name: "{{ instance_name }}"
+        key_name: "{{ key_name }}"
+        instance_type: "{{ instance_type }}"
+        image_id: "{{ image_id }}"
+        wait: yes
+        region: "{{ region }}"
+        vpc_subnet_id: "{{ subnet_info.subnets[0].subnet_id  | default(omit) }}"
+        security_group: "{{ security_group }}"
+        count: 1
+        tags: 
+          Enviroment: Demo
+      register: ec2
+
+    - name: Debug EC2 instance output
+      debug:
+        var: ec2
+
+    - name: Save public ip to inventory
+      copy:
+        content: |
+          [web]
+          {{ ec2.instances[0].public_ip_address }} ansible_user=ubuntu ansible_ssh_private_key_file=/Users/user/Downloads/web-app-key.pem 
+        dest: inventory.ini
+        when: ec2.instances | length > 0
+
+    - name: Add new instance to host group
+      ansible.builtin.add_host:
+        hostname: "{{ item.public_ip }}"
+        groupname: launched_ec2
+      loop: "{{ ec2.instances }}"
+
+
+    - name: Output instance details
+      ansible.builtin.debug:
+        msg: "Launched EC2 instance with ID: {{ item.id }}, Public IP: {{ item.public_ip }}"
+      loop: "{{ ec2.instances }}"
