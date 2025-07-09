@@ -1,10 +1,89 @@
-This Ansible playbook automates the process of launching an EC2 instance on AWS. It is designed to run locally (on localhost) and does not gather system facts, which speeds up execution since no information about the local machine is needed. The playbook uses variables to store key configuration values such as the AWS region, EC2 instance type, AMI ID, security group name, and key pair name, making the playbook flexible and easy to update for different environments.
+# Ansible EC2 Launch Playbook
 
-The playbook's tasks begin by creating a security group using the amazon.aws.ec2_group module. This security group allows inbound SSH access (port 22) from any IP address and permits all outbound traffic. The details of the created security group are stored in the sg variable for later use. Immediately after, a debug task outputs the security group ID to provide feedback and aid in troubleshooting.
+This Ansible playbook automates the process of launching an EC2 instance on AWS. It is designed to run locally (on `localhost`) and does not gather system facts, which speeds up execution. The playbook uses variables to store key configuration values such as the AWS region, EC2 instance type, AMI ID, security group name, and key pair name, making it flexible and easy to update for different environments.
 
-Next, the playbook launches an EC2 instance using the amazon.aws.ec2 module. It references the previously defined variables for configuration, waits for the instance to be ready, and associates it with the created security group. The instance is tagged for identification, and its details are saved in the ec2 variable.
+## How It Works
 
-Once the instance is running, the playbook saves its public IP address to a local inventory.ini file. This file can be used for subsequent Ansible runs to connect to the new instance. The playbook then adds the new instance to an in-memory host group called launched_ec2 using the add_host module, making it available for further tasks within the same playbook run. Finally, a debug task outputs the instance ID and public IP for each launched instance, providing clear feedback on the resources created. This structure makes the playbook a practical tool for automating EC2 provisioning and initial setup.
+The playbook follows these steps:
+
+1. **Creates a Security Group**  
+   Uses the `amazon.aws.ec2_group` module to create a security group with SSH (port 22) open to the world and all outbound traffic allowed.
+
+2. **Outputs Security Group Details**  
+   Prints the security group ID for reference.
+
+3. **Gets Subnet Information**  
+   Uses `amazon.aws.ec2_vpc_subnet_info` to look up the subnet where the instance will be launched.
+
+4. **Checks for Existing EC2 Instances**  
+   Uses `amazon.aws.ec2_instance_info` to check if an EC2 instance with the specified name tag already exists and is in a `running` or `pending` state.  
+   **Reason:** This prevents launching duplicate instances and ensures idempotency.
+
+5. **Conditionally Launches EC2 Instance**  
+   Only launches a new EC2 instance if no existing instance with the specified tag is found.  
+   This is controlled by a `when` condition:
+   ```yaml
+   when: existing_instances.instances | length == 0
+   ```
+   This ensures that if an instance already exists, the playbook will not create another one.
+
+6. **Outputs EC2 Instance Details**  
+   Prints the details of the launched instance for visibility and troubleshooting.
+
+7. **Saves Public IP to Inventory**  
+   Writes the public IP of the new instance to an `inventory.ini` file for use in future Ansible runs.
+
+8. **Adds Instance to Host Group**  
+   Dynamically adds the new instance to an in-memory Ansible group for further automation.
+
+9. **Outputs Instance Details**  
+   Prints the instance ID and public IP for each launched instance.
+
+## Example Task: Conditional EC2 Launch
+
+```yaml
+- name: Check for existing EC2 instance
+  amazon.aws.ec2_instance_info:
+    region: "{{ region }}"
+    filters:
+      "tag:Name": "{{ instance_name }}"
+      instance-state-name: [ "running", "pending" ]
+  register: existing_instances
+
+- name: Launch EC2 instance if not present
+  amazon.aws.ec2_instance:
+    name: "{{ instance_name }}"
+    key_name: "{{ key_name }}"
+    instance_type: "{{ instance_type }}"
+    image_id: "{{ image_id }}"
+    wait: true
+    state: running
+    exact_count: 1
+    region: "{{ region }}"
+    vpc_subnet_id: "{{ subnet_info.subnets[0].subnet_id | default(omit) }}"
+    security_group: "{{ security_group }}"
+    tags: 
+      Enviroment: Demo
+  register: ec2
+  when: existing_instances.instances | length == 0
+```
+
+## What This Playbook Does
+
+- Creates a security group with SSH access (port 22) open to the world.
+- Looks up subnet information for the instance.
+- **Checks for existing EC2 instances with the specified tag and only launches a new instance if none exist.**
+- Saves the instance’s public IP to `inventory.ini` for future use.
+- Adds the instance to an in-memory Ansible group for further automation.
+- Outputs the instance ID and public IP.
+
+## Notes
+
+- Update the subnet ID in the playbook to match your AWS environment.
+- The playbook assumes the default user is `ubuntu` (for Ubuntu AMIs). Change as needed.
+- Ensure your key pair file path is correct and accessible.
+- This playbook is idempotent: running it multiple times will not create duplicate EC2 instances with
+
 
 ```
 - name: Launch EC2 instance
@@ -51,31 +130,44 @@ Once the instance is running, the playbook saves its public IP address to a loca
 ```
 * Prints the security group ID to the console for reference.
 
-```    - name: Launch EC2 instance
-      amazon.aws.ec2:
+```     
+        amazon.aws.ec2_instance:
         name: "{{ instance_name }}"
-        key_name: "{{ key_name: }}"
-        instance_type: "{{ instance_type: }}"
+        key_name: "{{ key_name }}"
+        instance_type: "{{ instance_type }}"
         image_id: "{{ image_id }}"
-        wait: yes
+        wait: true
+        state: running
+        exact_count: 1
         region: "{{ region }}"
-        vpc_subnet_id: "{{ lookup('amazon.aws.aws_subnet', 'subnet-062baa97588e6ef8e') | default(omit) }}"
+        vpc_subnet_id: "{{ subnet_info.subnets[0].subnet_id  | default(omit) }}"
         security_group: "{{ security_group }}"
-        count: 1
         tags: 
           Enviroment: Demo
       register: ec2
+      when: existing_instances.instances | length == 0
 ```
 * Launches an EC2 instance with the specified parameters, waits for it to be ready, and tags it. The result is registered as ec2.
 
 ```
-    - name: Save public ip to inventory
+ - name: Check for existing ec2 instances
+      amazon.aws.ec2_instance_info:
+        region: "{{ region }}"
+        filters:
+          tag:Name: "{{ instance_name }}"
+          instance-state-name: ["running", "pending"]
+      register: existing_instances
+```
+
+* Uses ```amazon.aws.ec2_instance_info``` to check if an EC2 instance with the specified name tag already exists and is in a running or pending state.
+```
+   - name: Save public ip to inventory
       copy:
         content: |
           [web]
-          {{ ec2.instances[0].public_ip }} ansible_user=ubuntu ansible_ssh_private_key_file=/Users/user/Downloads/web-app-key.pem 
+          {{ ec2.instances[0].public_ip_address }} ansible_user=ubuntu ansible_ssh_private_key_file=/Users/user/Downloads/web-app-key.pem 
         dest: inventory.ini
-        when: ec2.instances | length > 0
+      when: ec2.instances | length > 0
 ```
 * Writes the public IP of the new instance to an ```inventory.ini``` file for later use, only if an instance was created.
 
@@ -91,7 +183,7 @@ Once the instance is running, the playbook saves its public IP address to a loca
 ```
     - name: Output instance details
       ansible.builtin.debug:
-        msg: "Launched EC2 instance with ID: {{ item.id }}, Public IP: {{ item.public_ip }}"
+        msg: "Launched EC2 instance with ID: {{ item.instance_id }}, Private IP: {{ item.private_ip_address }}"
       loop: "{{ ec2.instances }}"
 ```
 * Prints the instance ID and public IP for each launched instance.
@@ -99,13 +191,6 @@ Once the instance is running, the playbook saves its public IP address to a loca
 
 3. After completion, the public IP of the new instance will be saved in `inventory.ini`.
 
-## What This Playbook Does
-
-- Creates a security group with SSH access (port 22) open to the world.
-- Launches an EC2 instance in the specified region and subnet.
-- Saves the instance’s public IP to `inventory.ini` for future use.
-- Adds the instance to an in-memory Ansible group for further automation.
-- Outputs the instance ID and public IP.
 
 ## Notes
 
